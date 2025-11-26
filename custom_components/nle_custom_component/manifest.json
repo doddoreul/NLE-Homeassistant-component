@@ -1,0 +1,9 @@
+{
+  "domain": "nle_custom_component",
+  "name": "NLE Custom Component",
+  "version": "0.1.0",
+  "documentation": "https://github.com/doddoreul/NLE-Homeassistant-component",
+  "requirements": [],
+  "iot_class": "cloud_polling",
+  "config_flow": false
+}

@@ -1,0 +1,3 @@
+nle_custom_component:
+  api_url: "https://api.nolongerevil.com/v1/endpoint"
+  api_key: "CLE-SECRETE-NLE"

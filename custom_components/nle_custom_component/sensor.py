@@ -11,29 +11,29 @@ from homeassistant.helpers.update_coordinator import (
 from .const import DOMAIN, CONF_API_URL, CONF_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
-
 SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Support de configuration.yaml."""
+    """Configuration via YAML."""
+
     api_url = hass.data[DOMAIN][CONF_API_URL]
     api_key = hass.data[DOMAIN][CONF_API_KEY]
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_config_entry_first_refresh()
 
-    entities = [
-        NLESensor(coordinator, "example_value", "NLE Example Sensor"),
+    sensors = [
+        NLESensor(coordinator, "example_value", "NLE Example Sensor")
     ]
 
-    async_add_entities(entities)
+    async_add_entities(sensors)
 
 
 class NLECoordinator(DataUpdateCoordinator):
-    """Gestion centralisée des appels API."""
+    """Gestion des appels API."""
 
-    def __init__(self, hass, api_url: str, api_key: str):
+    def __init__(self, hass, api_url, api_key):
         super().__init__(
             hass,
             _LOGGER,
@@ -53,15 +53,14 @@ class NLECoordinator(DataUpdateCoordinator):
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        raise UpdateFailed(f"Erreur API : status {resp.status}")
+                        raise UpdateFailed(f"Erreur API : {resp.status}")
                     return await resp.json()
-
         except Exception as err:
             raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
 
 class NLESensor(Entity):
-    """Un capteur NLE API."""
+    """Capteur basé sur la NLE API."""
 
     def __init__(self, coordinator, key, name):
         self.coordinator = coordinator
@@ -79,9 +78,7 @@ class NLESensor(Entity):
     @property
     def state(self):
         data = self.coordinator.data
-        if not data:
-            return None
-        return data.get(self._key)
+        return None if not data else data.get(self._key)
 
     @property
     def available(self):

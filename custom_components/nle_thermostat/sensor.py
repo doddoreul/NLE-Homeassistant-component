@@ -20,6 +20,10 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_request_refresh()
 
+    if not coordinator.data:
+        _LOGGER.error("Impossible de récupérer les données NLE. Vérifie l'API.")
+        return
+
     device_info = coordinator.data.get("device", {})
     serial = device_info.get("serial")
     if not serial:

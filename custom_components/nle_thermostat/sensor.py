@@ -12,29 +12,31 @@ SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    _LOGGER.warning("NLE Thermostat async_setup_platform called")
     """Setup YAML sensors."""
     api_url = hass.data[DOMAIN][CONF_API_URL]
     api_key = hass.data[DOMAIN][CONF_API_KEY]
 
     coordinator = NLECoordinator(hass, api_url, api_key)
-    await coordinator.async_request_refresh()
 
-    if not coordinator.data:
-        _LOGGER.error("Impossible de récupérer les données NLE. Vérifie l'API.")
-        return
+    # Premier fetch des données
+    try:
+        await coordinator.async_request_refresh()
+    except Exception as e:
+        _LOGGER.warning("Impossible de récupérer les données NLE au setup initial : %s", e)
 
-    device_info = coordinator.data.get("device", {})
-    serial = device_info.get("serial")
-    if not serial:
-        _LOGGER.error("Impossible de récupérer le serial du device")
-        return
+    # Vérifier si data est présente
+    serial = "unknown_serial"
+    device_name = "NLE Device"
 
-    sensors = [
-        NLEDeviceSensor(coordinator, serial, "Living Room Device")
-    ]
+    if coordinator.data and "device" in coordinator.data:
+        device_info = coordinator.data.get("device", {})
+        serial = device_info.get("serial", "unknown_serial")
+        device_name = device_info.get("name", "NLE Device")
 
+    sensors = [NLEDeviceSensor(coordinator, serial, device_name)]
     async_add_entities(sensors)
+
+    _LOGGER.info("NLE Thermostat async_setup_platform called")
 
 
 class NLECoordinator(DataUpdateCoordinator):
@@ -84,9 +86,10 @@ class NLEDeviceSensor(Entity):
 
     @property
     def state(self):
-        """On prend current_temperature comme valeur principale du capteur."""
-        data = self.coordinator.data
-        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        """Valeur principale du capteur : current_temperature."""
+        if not self.coordinator.data:
+            return None
+        shared = self.coordinator.data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
         return shared.get("current_temperature")
 
     @property
@@ -95,20 +98,22 @@ class NLEDeviceSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """Toutes les données importantes."""
-        data = self.coordinator.data
+        """Toutes les données importantes et device info."""
         attrs = {}
 
-        # Ajout des données du device
-        device = data.get("device", {})
+        if not self.coordinator.data:
+            return attrs
+
+        # Infos device
+        device = self.coordinator.data.get("device", {})
         attrs.update({
             "device_id": device.get("id"),
             "serial": device.get("serial"),
             "device_name": device.get("name"),
         })
 
-        # Ajout des champs de state.shared
-        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        # Champs NLE
+        shared = self.coordinator.data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
         fields = [
             "target_temperature",
             "target_temperature_type",

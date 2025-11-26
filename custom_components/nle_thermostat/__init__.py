@@ -14,6 +14,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     hass.data[DOMAIN] = get_config(hass, config)
 
     await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
-    _LOGGER.info("NLE Thermostat custom component loaded")
+    _LOGGER.info("NLE Thermostat loaded")
 
     return True

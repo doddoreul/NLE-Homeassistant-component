@@ -18,7 +18,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     api_key = hass.data[DOMAIN][CONF_API_KEY]
 
     coordinator = NLECoordinator(hass, api_url, api_key)
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     device_info = coordinator.data.get("device", {})
     serial = device_info.get("serial")

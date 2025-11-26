@@ -1,6 +1,6 @@
 {
-  "domain": "nle_custom_component",
-  "name": "NLE Custom Component",
+  "domain": "nle_thermostat",
+  "name": "NLE Thermostat",
   "version": "0.1.0",
   "documentation": "https://github.com/doddoreul/NLE-Homeassistant-component",
   "requirements": [],

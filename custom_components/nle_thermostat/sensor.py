@@ -39,7 +39,7 @@ class NLECoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name="nle_custom_component_coordinator",
+            name="nle_thermostat_coordinator",
             update_interval=SCAN_INTERVAL,
         )
         self.api_url = api_url
@@ -75,7 +75,7 @@ class NLEDeviceSensor(Entity):
 
     @property
     def unique_id(self):
-        return f"nle_custom_component_{self.serial}"
+        return f"nle_thermostat_{self.serial}"
 
     @property
     def state(self):

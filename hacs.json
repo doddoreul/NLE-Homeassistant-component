@@ -2,7 +2,7 @@
   "name": "NLE Custom Component",
   "content_in_root": false,
   "render_readme": true,
-  "filename": "nle_custom_component",
-  "domains": ["nle_custom_component"],
+  "filename": "nle_thermostat",
+  "domains": ["nle_thermostat"],
   "country": "FR"
 }

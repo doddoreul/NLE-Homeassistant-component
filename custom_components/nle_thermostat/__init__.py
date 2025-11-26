@@ -13,7 +13,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Chargement via configuration.yaml uniquement."""
     hass.data[DOMAIN] = get_config(hass, config)
 
-    # Charger la plateforme sensor
-    hass.helpers.discovery.load_platform("sensor", DOMAIN, {}, config)
+    await discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
+    _LOGGER.info("NLE Thermostat custom component loaded")
 
     return True

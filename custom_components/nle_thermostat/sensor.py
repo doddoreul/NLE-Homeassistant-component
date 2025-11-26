@@ -90,10 +90,20 @@ class NLEDeviceSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """Toutes les autres données exposées comme attributs."""
+        """Toutes les données importantes."""
         data = self.coordinator.data
+        attrs = {}
+
+        # Ajout des données du device
+        device = data.get("device", {})
+        attrs.update({
+            "device_id": device.get("id"),
+            "serial": device.get("serial"),
+            "device_name": device.get("name"),
+        })
+
+        # Ajout des champs de state.shared
         shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
-        # On ne retourne que les champs que tu voulais
         fields = [
             "target_temperature",
             "target_temperature_type",
@@ -106,7 +116,11 @@ class NLEDeviceSensor(Entity):
             "can_cool",
             "can_heat",
         ]
-        return {field: shared.get(field) for field in fields}
+        for field in fields:
+            if field in shared:
+                attrs[field] = shared[field]
+
+        return attrs
 
     async def async_update(self):
         await self.coordinator.async_request_refresh()

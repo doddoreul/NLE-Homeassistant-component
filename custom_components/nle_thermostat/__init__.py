@@ -2,6 +2,7 @@
 import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers import discovery
 
 from .const import DOMAIN
 from .config import get_config

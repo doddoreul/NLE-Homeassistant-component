@@ -8,4 +8,5 @@ def get_config(hass: HomeAssistant, config: ConfigType):
     return {
         CONF_API_URL: domain_cfg.get(CONF_API_URL),
         CONF_API_KEY: domain_cfg.get(CONF_API_KEY),
+        CONF_SERIAL: config[DOMAIN][CONF_SERIAL],
     }

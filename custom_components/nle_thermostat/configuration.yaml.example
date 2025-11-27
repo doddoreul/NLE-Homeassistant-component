@@ -1,3 +1,4 @@
 nle_thermostat:
   api_url: "https://api.nolongerevil.com/v1/endpoint"
   api_key: "NLE SECRET KEY"
+  serial: "your thermostat serial"

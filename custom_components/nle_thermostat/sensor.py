@@ -12,36 +12,31 @@ SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Setup YAML sensors."""
+    _LOGGER.info("NLE Thermostat async_setup_platform called")
+
     api_url = hass.data[DOMAIN][CONF_API_URL]
     api_key = hass.data[DOMAIN][CONF_API_KEY]
 
     coordinator = NLECoordinator(hass, api_url, api_key)
+    await coordinator.async_refresh()
 
-    # Premier fetch des données
-    try:
-        await coordinator.async_request_refresh()
-    except Exception as e:
-        _LOGGER.warning("Impossible de récupérer les données NLE au setup initial : %s", e)
+    data = coordinator.data or {}
 
-    # Vérifier si data est présente
-    serial = "unknown_serial"
-    device_name = "NLE Device"
+    device_info = data.get("device", {})
+    serial = device_info.get("serial")
 
-    if coordinator.data and "device" in coordinator.data:
-        device_info = coordinator.data.get("device", {})
-        serial = device_info.get("serial", "unknown_serial")
-        device_name = device_info.get("name", "NLE Device")
+    if not serial:
+        _LOGGER.error("Impossible de récupérer le serial du device (device.serial manquant). Données = %s", data)
+        return
 
-    sensors = [NLEDeviceSensor(coordinator, serial, device_name)]
+    sensors = [
+        NLEDeviceSensor(coordinator, serial, "Living Room Device")
+    ]
+
     async_add_entities(sensors)
-
-    _LOGGER.info("NLE Thermostat async_setup_platform called")
 
 
 class NLECoordinator(DataUpdateCoordinator):
-    """Centralise les appels API."""
-
     def __init__(self, hass, api_url, api_key):
         super().__init__(
             hass,
@@ -62,15 +57,17 @@ class NLECoordinator(DataUpdateCoordinator):
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        raise UpdateFailed(f"Erreur API : status {resp.status}")
+                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url)
+                        return {}  # <-- NE PAS PLANTER
+
                     return await resp.json()
+
         except Exception as err:
-            raise UpdateFailed(f"Erreur API NLE : {err}") from err
+            _LOGGER.error("Erreur API NLE : %s", err)
+            return {}  # <-- NE PAS PLANTER
 
 
 class NLEDeviceSensor(Entity):
-    """Entity représentant un device NLE avec plusieurs attributs."""
-
     def __init__(self, coordinator, serial, name):
         self.coordinator = coordinator
         self.serial = serial
@@ -86,10 +83,8 @@ class NLEDeviceSensor(Entity):
 
     @property
     def state(self):
-        """Valeur principale du capteur : current_temperature."""
-        if not self.coordinator.data:
-            return None
-        shared = self.coordinator.data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        data = self.coordinator.data or {}
+        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
         return shared.get("current_temperature")
 
     @property
@@ -98,22 +93,21 @@ class NLEDeviceSensor(Entity):
 
     @property
     def extra_state_attributes(self):
-        """Toutes les données importantes et device info."""
+        data = self.coordinator.data or {}
+
         attrs = {}
 
-        if not self.coordinator.data:
-            return attrs
-
-        # Infos device
-        device = self.coordinator.data.get("device", {})
+        # device info
+        device = data.get("device", {})
         attrs.update({
             "device_id": device.get("id"),
             "serial": device.get("serial"),
             "device_name": device.get("name"),
         })
 
-        # Champs NLE
-        shared = self.coordinator.data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        # shared state
+        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+
         fields = [
             "target_temperature",
             "target_temperature_type",
@@ -127,8 +121,7 @@ class NLEDeviceSensor(Entity):
             "can_heat",
         ]
         for field in fields:
-            if field in shared:
-                attrs[field] = shared[field]
+            attrs[field] = shared.get(field)
 
         return attrs
 

@@ -57,8 +57,8 @@ class NLECoordinator(DataUpdateCoordinator):
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url)
-                        return {}  # <-- NE PAS PLANTER
+                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url, headers)
+                        return {}
 
                     return await resp.json()
 

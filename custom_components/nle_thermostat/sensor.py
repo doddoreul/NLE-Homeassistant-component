@@ -5,7 +5,7 @@ from datetime import timedelta
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, CONF_API_URL, CONF_API_KEY
+from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_SERIAL
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=5)
@@ -16,6 +16,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
     api_url = hass.data[DOMAIN][CONF_API_URL]
     api_key = hass.data[DOMAIN][CONF_API_KEY]
+    serial = hass.data[DOMAIN][CONF_SERIAL]
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()

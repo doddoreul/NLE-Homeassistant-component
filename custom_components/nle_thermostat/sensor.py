@@ -49,15 +49,14 @@ class NLECoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {self.api_key}"
         }
 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url, headers)
+                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url)
                         return {}
 
                     return await resp.json()

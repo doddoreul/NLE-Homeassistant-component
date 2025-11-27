@@ -24,7 +24,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     data = coordinator.data or {}
 
     device_info = data.get("device", {})
-    serial = device_info.get("serial")
 
     if not serial:
         _LOGGER.error("Impossible de récupérer le serial du device (device.serial manquant). Données = %s", data)

@@ -14,9 +14,9 @@ SCAN_INTERVAL = timedelta(minutes=5)
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     _LOGGER.info("NLE Thermostat async_setup_platform called")
 
-    api_url = hass.data[DOMAIN][CONF_API_URL]
     api_key = hass.data[DOMAIN][CONF_API_KEY]
     serial = hass.data[DOMAIN][CONF_SERIAL]
+    api_url = hass.data[DOMAIN][CONF_API_URL]+"thermostat/"+serial+"/status"
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()

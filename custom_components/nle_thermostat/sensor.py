@@ -2,7 +2,7 @@ import logging
 import aiohttp
 from datetime import timedelta
 
-from homeassistant.helpers.entity import Entity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
@@ -14,29 +14,33 @@ SCAN_INTERVAL = timedelta(minutes=5)
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     _LOGGER.info("NLE Thermostat async_setup_platform called")
 
-    api_key = hass.data[DOMAIN][CONF_API_KEY]
-    device_id = hass.data[DOMAIN][CONF_DEVICE_ID]
-    api_url = hass.data[DOMAIN][CONF_API_URL]+"thermostat/"+device_id+"/status"
+    api_base = hass.data[DOMAIN].get(CONF_API_URL)
+    api_key = hass.data[DOMAIN].get(CONF_API_KEY)
+    device_id = hass.data[DOMAIN].get(CONF_DEVICE_ID)
+
+    if not api_base or not api_key or not device_id:
+        _LOGGER.error("Configuration incomplète pour nle_thermostat")
+        return
+
+    api_url = f"{api_base}thermostat/{device_id}/status"
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()
 
-    data = coordinator.data or {}
-
-    device_info = data.get("device", {})
-
-    if not device_id:
-        _LOGGER.error("Impossible de récupérer le device_id du device (device.device_id manquant). Données = %s", data)
-        return
-
+    # On crée 4 entités séparées
     sensors = [
-        NLEDeviceSensor(coordinator, device_id, "Living Room Device")
+        NLEFieldSensor(coordinator, device_id, "nle_target_temp", "target_temperature"),
+        NLEFieldSensor(coordinator, device_id, "nle_current_temp", "current_temperature"),
+        NLEFieldSensor(coordinator, device_id, "nle_mode", "target_temperature_type"),
+        NLEFieldSensor(coordinator, device_id, "nle_heating", "hvac_heater_state"),
     ]
 
     async_add_entities(sensors)
 
 
 class NLECoordinator(DataUpdateCoordinator):
+    """Coordonne l'appel API."""
+
     def __init__(self, hass, api_url, api_key):
         super().__init__(
             hass,
@@ -48,81 +52,45 @@ class NLECoordinator(DataUpdateCoordinator):
         self.api_key = api_key
 
     async def _async_update_data(self):
-        headers = {
-            "Authorization": f"Bearer {self.api_key}"
-        }
+        headers = {"Authorization": f"Bearer {self.api_key}"}
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.api_url, headers=headers, timeout=10) as resp:
+                async with session.get(self.api_url, headers=headers, timeout=15) as resp:
                     if resp.status != 200:
-                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url)
-                        return {}
-
+                        raise UpdateFailed(f"API HTTP {resp.status}")
                     return await resp.json()
 
         except Exception as err:
-            _LOGGER.error("Erreur API NLE : %s", err)
-            return {}  # <-- NE PAS PLANTER
+            raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
 
-class NLEDeviceSensor(Entity):
-    def __init__(self, coordinator, device_id, name):
+class NLEFieldSensor(SensorEntity):
+    """Un champ individuel du thermostat devient une entité."""
+
+    def __init__(self, coordinator, device_id, sensor_name, field_name):
         self.coordinator = coordinator
         self.device_id = device_id
-        self._name = name
-
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def unique_id(self):
-        return f"nle_thermostat_{self.device_id}"
-
-    @property
-    def state(self):
-        data = self.coordinator.data or {}
-        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
-        return shared.get("current_temperature")
+        self._attr_name = sensor_name.replace("_", " ").title()
+        self._attr_unique_id = f"{DOMAIN}_{sensor_name}"
+        self.field_name = field_name
 
     @property
     def available(self):
         return self.coordinator.last_update_success
 
     @property
-    def extra_state_attributes(self):
+    def native_value(self):
+        """Retourne uniquement la valeur du champ souhaité."""
         data = self.coordinator.data or {}
+        state = data.get("state", {})
+        shared_key = next((k for k in state if k.startswith("shared.")), None)
 
-        attrs = {}
+        if not shared_key:
+            return None
 
-        # device info
-        device = data.get("device", {})
-        attrs.update({
-            "device_id": device.get("id"),
-            "device_id": device.get("device_id"),
-            "device_name": device.get("name"),
-        })
-
-        # shared state
-        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
-
-        fields = [
-            "target_temperature",
-            "target_temperature_type",
-            "current_temperature",
-            "hvac_heater_state",
-            "hvac_ac_state",
-            "fan_mode",
-            "auto_away",
-            "leaf",
-            "can_cool",
-            "can_heat",
-        ]
-        for field in fields:
-            attrs[field] = shared.get(field)
-
-        return attrs
+        val = state.get(shared_key, {}).get("value", {})
+        return val.get(self.field_name)
 
     async def async_update(self):
         await self.coordinator.async_request_refresh()

@@ -5,7 +5,7 @@ from datetime import timedelta
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_SERIAL
+from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=5)
@@ -15,8 +15,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     _LOGGER.info("NLE Thermostat async_setup_platform called")
 
     api_key = hass.data[DOMAIN][CONF_API_KEY]
-    serial = hass.data[DOMAIN][CONF_SERIAL]
-    api_url = hass.data[DOMAIN][CONF_API_URL]+"thermostat/"+serial+"/status"
+    device_id = hass.data[DOMAIN][CONF_DEVICE_ID]
+    api_url = hass.data[DOMAIN][CONF_API_URL]+"thermostat/"+device_id+"/status"
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()
@@ -25,12 +25,12 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
     device_info = data.get("device", {})
 
-    if not serial:
-        _LOGGER.error("Impossible de récupérer le serial du device (device.serial manquant). Données = %s", data)
+    if not device_id:
+        _LOGGER.error("Impossible de récupérer le device_id du device (device.device_id manquant). Données = %s", data)
         return
 
     sensors = [
-        NLEDeviceSensor(coordinator, serial, "Living Room Device")
+        NLEDeviceSensor(coordinator, device_id, "Living Room Device")
     ]
 
     async_add_entities(sensors)
@@ -67,9 +67,9 @@ class NLECoordinator(DataUpdateCoordinator):
 
 
 class NLEDeviceSensor(Entity):
-    def __init__(self, coordinator, serial, name):
+    def __init__(self, coordinator, device_id, name):
         self.coordinator = coordinator
-        self.serial = serial
+        self.device_id = device_id
         self._name = name
 
     @property
@@ -78,12 +78,12 @@ class NLEDeviceSensor(Entity):
 
     @property
     def unique_id(self):
-        return f"nle_thermostat_{self.serial}"
+        return f"nle_thermostat_{self.device_id}"
 
     @property
     def state(self):
         data = self.coordinator.data or {}
-        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
         return shared.get("current_temperature")
 
     @property
@@ -100,12 +100,12 @@ class NLEDeviceSensor(Entity):
         device = data.get("device", {})
         attrs.update({
             "device_id": device.get("id"),
-            "serial": device.get("serial"),
+            "device_id": device.get("device_id"),
             "device_name": device.get("name"),
         })
 
         # shared state
-        shared = data.get("state", {}).get(f"shared.{self.serial}", {}).get("value", {})
+        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
 
         fields = [
             "target_temperature",

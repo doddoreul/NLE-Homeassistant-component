@@ -1,13 +1,9 @@
 import logging
-import aiohttp
 from datetime import timedelta
+import aiohttp
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
-    HVAC_MODE_HEAT,
-    HVAC_MODE_OFF,
-    SUPPORT_TARGET_TEMPERATURE,
-)
+from homeassistant.components.climate.const import HVAC_MODE_HEAT, HVAC_MODE_OFF, SUPPORT_TARGET_TEMPERATURE
 from homeassistant.const import TEMP_CELSIUS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -18,11 +14,13 @@ SCAN_INTERVAL = timedelta(minutes=5)
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """YAML-based setup for NLE climate."""
+    """Setup YAML-based NLE climate."""
+    _LOGGER.info("NLE Thermostat climate async_setup_platform called")
+
     cfg = hass.data.get(DOMAIN, {})
-    device_id = cfg[CONF_DEVICE_ID]
-    api_url = cfg[CONF_API_URL].rstrip("/") + f"/thermostat/{device_id}/status"
-    api_key = cfg[CONF_API_KEY]
+    device_id = cfg.get(CONF_DEVICE_ID)
+    api_url = cfg.get(CONF_API_URL).rstrip("/") + f"/thermostat/{device_id}/status"
+    api_key = cfg.get(CONF_API_KEY)
 
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()
@@ -37,7 +35,7 @@ class NLECoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name="nle_thermostat_coordinator",
+            name="nle_thermostat_climate_coordinator",
             update_interval=SCAN_INTERVAL,
         )
         self.api_url = api_url
@@ -47,18 +45,17 @@ class NLECoordinator(DataUpdateCoordinator):
         headers = {"Authorization": f"Bearer {self.api_key}"}
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.api_url, headers=headers, timeout=15) as resp:
+                async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
                         raise UpdateFailed(f"API HTTP {resp.status}")
                     return await resp.json()
         except Exception as err:
             raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
-    async def async_set_temperature(self, device_id, temperature, mode, scale="C"):
-        """Call the NLE API to set temperature."""
-        url = f"{self.api_url.rsplit('/status',1)[0]}/temperature"
+    async def async_set_temperature(self, device_id, temperature, mode="heat"):
+        url = self.api_url.rsplit("/status", 1)[0] + "/temperature"
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        json_data = {"value": temperature, "mode": mode, "scale": scale}
+        json_data = {"value": temperature, "mode": mode, "scale": "C"}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=json_data) as resp:
                 if resp.status != 200:
@@ -66,8 +63,7 @@ class NLECoordinator(DataUpdateCoordinator):
                 return await resp.json()
 
     async def async_set_mode(self, device_id, mode):
-        """Call the NLE API to set mode."""
-        url = f"{self.api_url.rsplit('/status',1)[0]}/mode"
+        url = self.api_url.rsplit("/status", 1)[0] + "/mode"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         json_data = {"mode": mode}
         async with aiohttp.ClientSession() as session:
@@ -123,9 +119,7 @@ class NLEClimate(ClimateEntity):
 
     async def async_update(self):
         data = self.coordinator.data or {}
-        shared = next(
-            (v.get("value", {}) for k, v in data.get("state", {}).items() if k.startswith("shared.")), {}
-        )
+        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
         self._current_temperature = shared.get("current_temperature")
         self._target_temperature = shared.get("target_temperature")
         self._hvac_mode = HVAC_MODE_HEAT if shared.get("hvac_heater_state") else HVAC_MODE_OFF
@@ -134,8 +128,7 @@ class NLEClimate(ClimateEntity):
         temperature = kwargs.get("temperature")
         if temperature is None:
             return
-        mode = "heat"  # On ne gère que heat pour l'instant
-        await self.coordinator.async_set_temperature(self.device_id, temperature, mode)
+        await self.coordinator.async_set_temperature(self.device_id, temperature, "heat")
         await self.coordinator.async_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode):

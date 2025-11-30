@@ -12,11 +12,12 @@ from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=5)
 
-# Définition des constantes locales pour HA 2025+
+# Constantes locales pour HA 2025+
 HVAC_MODE_HEAT = "heat"
 HVAC_MODE_OFF = "off"
 SUPPORT_TARGET_TEMPERATURE = 1
 TEMP_CELSIUS = "°C"
+
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     """Setup YAML-based climate platform."""
@@ -98,7 +99,13 @@ class NLEClimate(ClimateEntity):
         return shared.get("target_temperature")
 
     @property
+    def hvac_modes(self):
+        """Liste des modes HVAC supportés."""
+        return [HVAC_MODE_HEAT, HVAC_MODE_OFF]
+
+    @property
     def hvac_mode(self):
+        """Mode HVAC actuel."""
         data = self.coordinator.data or {}
         shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
         if shared.get("hvac_heater_state"):
@@ -107,6 +114,7 @@ class NLEClimate(ClimateEntity):
 
     @property
     def supported_features(self):
+        """Bitmask des fonctionnalités supportées."""
         return SUPPORT_TARGET_TEMPERATURE
 
     async def async_set_temperature(self, **kwargs):
@@ -120,23 +128,4 @@ class NLEClimate(ClimateEntity):
         json_data = {"value": temperature, "mode": HVAC_MODE_HEAT, "scale": "C"}
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=json_data) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("Erreur API NLE set_temperature: HTTP %s", resp.status)
-                await self.coordinator.async_request_refresh()
-
-    async def async_set_hvac_mode(self, hvac_mode):
-        """Set HVAC mode via API."""
-        url = f"{self.coordinator.api_url.replace('/status', '/mode')}"
-        headers = {"Authorization": f"Bearer {self.coordinator.api_key}"}
-        json_data = {"mode": hvac_mode}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=json_data) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("Erreur API NLE set_hvac_mode: HTTP %s", resp.status)
-                await self.coordinator.async_request_refresh()
-
-    async def async_update(self):
-        """Request coordinator to update data."""
-        await self.coordinator.async_request_refresh()
+            async with session.post(url, headers=heade

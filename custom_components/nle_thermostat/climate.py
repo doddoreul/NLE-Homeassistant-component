@@ -3,7 +3,6 @@ from datetime import timedelta
 import aiohttp
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import SUPPORT_TARGET_TEMPERATURE
 from homeassistant.const import TEMP_CELSIUS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -14,6 +13,9 @@ SCAN_INTERVAL = timedelta(minutes=5)
 
 HVAC_MODE_HEAT = "heat"
 HVAC_MODE_OFF = "off"
+
+# Bitmask pour les fonctionnalités supportées
+SUPPORT_TARGET_TEMPERATURE = 1
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):

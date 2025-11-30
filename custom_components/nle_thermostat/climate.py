@@ -4,6 +4,8 @@ from datetime import timedelta
 import aiohttp
 
 from homeassistant.components.climate import ClimateEntity
+from homeassistant.components.climate.const import HVAC_MODE_HEAT, HVAC_MODE_OFF, ClimateEntityFeature
+from homeassistant.const import TEMP_CELSIUS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.core import HomeAssistant
 
@@ -11,12 +13,6 @@ from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=5)
-
-# Constantes locales pour HA 2025+
-HVAC_MODE_HEAT = "heat"
-HVAC_MODE_OFF = "off"
-SUPPORT_TARGET_TEMPERATURE = 1
-TEMP_CELSIUS = "°C"
 
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
@@ -53,12 +49,10 @@ class NLECoordinator(DataUpdateCoordinator):
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        _LOGGER.error("Erreur API NLE : HTTP %s sur %s", resp.status, self.api_url)
-                        return {}
+                        raise UpdateFailed(f"Erreur API NLE : HTTP {resp.status} sur {self.api_url}")
                     return await resp.json()
         except Exception as err:
-            _LOGGER.error("Erreur API NLE : %s", err)
-            return {}
+            raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
 
 class NLEClimate(ClimateEntity):
@@ -68,6 +62,8 @@ class NLEClimate(ClimateEntity):
         self.coordinator = coordinator
         self.device_id = device_id
         self._name = name
+        self._attr_hvac_modes = [HVAC_MODE_HEAT, HVAC_MODE_OFF]  # <-- obligatoire pour HA 2025+
+        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
     @property
     def name(self):
@@ -75,7 +71,6 @@ class NLEClimate(ClimateEntity):
 
     @property
     def unique_id(self):
-        # Tronquer le device_id pour un ID plus lisible
         return f"nle_{self.device_id[:8]}"
 
     @property
@@ -99,13 +94,7 @@ class NLEClimate(ClimateEntity):
         return shared.get("target_temperature")
 
     @property
-    def hvac_modes(self):
-        """Liste des modes HVAC supportés."""
-        return [HVAC_MODE_HEAT, HVAC_MODE_OFF]
-
-    @property
     def hvac_mode(self):
-        """Mode HVAC actuel."""
         data = self.coordinator.data or {}
         shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
         if shared.get("hvac_heater_state"):
@@ -113,9 +102,12 @@ class NLEClimate(ClimateEntity):
         return HVAC_MODE_OFF
 
     @property
+    def hvac_modes(self):
+        return self._attr_hvac_modes
+
+    @property
     def supported_features(self):
-        """Bitmask des fonctionnalités supportées."""
-        return SUPPORT_TARGET_TEMPERATURE
+        return self._attr_supported_features
 
     async def async_set_temperature(self, **kwargs):
         """Set target temperature via API."""
@@ -128,4 +120,23 @@ class NLEClimate(ClimateEntity):
         json_data = {"value": temperature, "mode": HVAC_MODE_HEAT, "scale": "C"}
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=heade
+            async with session.post(url, headers=headers, json=json_data) as resp:
+                if resp.status != 200:
+                    _LOGGER.error("Erreur API NLE set_temperature: HTTP %s", resp.status)
+                await self.coordinator.async_request_refresh()
+
+    async def async_set_hvac_mode(self, hvac_mode):
+        """Set HVAC mode via API."""
+        url = f"{self.coordinator.api_url.replace('/status', '/mode')}"
+        headers = {"Authorization": f"Bearer {self.coordinator.api_key}"}
+        json_data = {"mode": hvac_mode}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=json_data) as resp:
+                if resp.status != 200:
+                    _LOGGER.error("Erreur API NLE set_hvac_mode: HTTP %s", resp.status)
+                await self.coordinator.async_request_refresh()
+
+    async def async_update(self):
+        """Request coordinator to update data."""
+        await self.coordinator.async_request_refresh()

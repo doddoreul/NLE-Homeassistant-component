@@ -1,9 +1,8 @@
-"""NLE Thermostat climate platform (YAML-based)."""
 import logging
-from datetime import timedelta
 import aiohttp
+from datetime import timedelta
 
-from homeassistant.components.climate import ClimateEntity
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
@@ -11,39 +10,36 @@ from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(minutes=5)
 
-# Constantes maison pour le thermostat
-HVAC_MODE_HEAT = "heat"
-HVAC_MODE_OFF = "off"
-SUPPORT_TARGET_TEMPERATURE = 1  # bitmask
-TEMP_CELSIUS = "°C"
-
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Setup YAML-based NLE climate platform."""
-    _LOGGER.info("NLE Thermostat climate async_setup_platform called")
+    """Setup YAML sensors."""
+    _LOGGER.info("NLE Thermostat async_setup_platform called")
 
-    cfg = hass.data.get(DOMAIN, {})
-    api_base = cfg.get(CONF_API_URL)
-    api_key = cfg.get(CONF_API_KEY)
-    device_id = cfg.get(CONF_DEVICE_ID)
+    device_id = hass.data[DOMAIN][CONF_DEVICE_ID]
+    api_url = f"{hass.data[DOMAIN][CONF_API_URL]}thermostat/{device_id}/status"
+    api_key = hass.data[DOMAIN][CONF_API_KEY]
 
-    if not api_base or not api_key or not device_id:
-        _LOGGER.error("nle_thermostat: configuration incomplète, climate non chargé")
-        return
-
-    # Construire l'URL status
-    api_url = api_base.rstrip("/") + f"/thermostat/{device_id}/status"
-
-    coordinator = NLECoordinator(hass, api_url, api_key, device_id)
+    coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()
 
-    async_add_entities([NLEClimate(coordinator, device_id)], True)
+    if not coordinator.data:
+        _LOGGER.error("Impossible de récupérer les données du device NLE")
+        return
+
+    sensors = [
+        NLESensor(coordinator, device_id, "current_temperature", "Current Temperature"),
+        NLESensor(coordinator, device_id, "target_temperature", "Target Temperature"),
+        NLESensor(coordinator, device_id, "target_temperature_type", "Mode"),
+        NLESensor(coordinator, device_id, "hvac_heater_state", "Heating"),
+    ]
+
+    async_add_entities(sensors)
 
 
 class NLECoordinator(DataUpdateCoordinator):
-    """Coordinator pour appels API NLE."""
+    """Centralise les appels API."""
 
-    def __init__(self, hass, api_url, api_key, device_id):
+    def __init__(self, hass, api_url, api_key):
         super().__init__(
             hass,
             _LOGGER,
@@ -52,107 +48,57 @@ class NLECoordinator(DataUpdateCoordinator):
         )
         self.api_url = api_url
         self.api_key = api_key
-        self.device_id = device_id
 
     async def _async_update_data(self):
         headers = {"Authorization": f"Bearer {self.api_key}"}
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(self.api_url, headers=headers, timeout=15) as resp:
+                async with session.get(self.api_url, headers=headers, timeout=10) as resp:
                     if resp.status != 200:
-                        raise UpdateFailed(f"API NLE HTTP {resp.status}")
+                        raise UpdateFailed(f"Erreur API : HTTP {resp.status}")
                     return await resp.json()
         except Exception as err:
-            raise UpdateFailed(f"Erreur réseau/API NLE : {err}") from err
-
-    async def async_set_temperature(self, temperature, mode="heat"):
-        url = self.api_url.replace("/status", "/temperature")
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        json_data = {"value": temperature, "mode": mode, "scale": "C"}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=json_data) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("Erreur set_temperature: HTTP %s", resp.status)
-                return await resp.json()
-
-    async def async_set_mode(self, mode: str):
-        url = self.api_url.replace("/status", "/mode")
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        json_data = {"mode": mode}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=json_data) as resp:
-                if resp.status != 200:
-                    _LOGGER.error("Erreur set_mode: HTTP %s", resp.status)
-                return await resp.json()
+            raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
 
-class NLEClimate(ClimateEntity):
-    """Entité climate pour le thermostat NLE."""
+class NLESensor(Entity):
+    """Un capteur générique pour NLE Thermostat."""
 
-    def __init__(self, coordinator: NLECoordinator, device_id: str):
+    def __init__(self, coordinator, device_id, field_key, name):
         self.coordinator = coordinator
         self.device_id = device_id
-        self._attr_hvac_modes = [HVAC_MODE_HEAT, HVAC_MODE_OFF]
-        self._attr_supported_features = SUPPORT_TARGET_TEMPERATURE
+        self.field_key = field_key
+        self._attr_name = f"NLE {name}"
+        self._attr_unique_id = f"nle_{device_id[:8]}_{field_key}"
 
     @property
-    def name(self) -> str:
-        return f"NLE {self.device_id[:8]}"
+    def name(self):
+        return self._attr_name
 
     @property
-    def unique_id(self) -> str:
-        return f"nle_{self.device_id[:8]}_climate"
+    def unique_id(self):
+        return self._attr_unique_id
 
     @property
-    def available(self) -> bool:
+    def state(self):
+        data = self.coordinator.data or {}
+        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
+        value = shared.get(self.field_key)
+        if isinstance(value, bool):
+            return "ON" if value else "OFF"
+        return value
+
+    @property
+    def available(self):
         return self.coordinator.last_update_success
 
     @property
-    def temperature_unit(self) -> str:
-        return TEMP_CELSIUS
-
-    @property
-    def current_temperature(self):
+    def extra_state_attributes(self):
+        """Renvoie toutes les données de state.shared."""
         data = self.coordinator.data or {}
         shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
-        return shared.get("current_temperature")
-
-    @property
-    def target_temperature(self):
-        data = self.coordinator.data or {}
-        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
-        return shared.get("target_temperature")
-
-    @property
-    def hvac_modes(self):
-        return self._attr_hvac_modes
-
-    @property
-    def hvac_mode(self):
-        data = self.coordinator.data or {}
-        shared = data.get("state", {}).get(f"shared.{self.device_id}", {}).get("value", {})
-        if shared.get("hvac_heater_state"):
-            return HVAC_MODE_HEAT
-        return HVAC_MODE_OFF
-
-    @property
-    def supported_features(self):
-        return self._attr_supported_features
-
-    async def async_set_temperature(self, **kwargs):
-        temp = kwargs.get("temperature")
-        if temp is None:
-            return
-        await self.coordinator.async_set_temperature(temp, HVAC_MODE_HEAT)
-        await self.coordinator.async_request_refresh()
-
-    async def async_set_hvac_mode(self, hvac_mode: str):
-        mode = HVAC_MODE_HEAT if hvac_mode == HVAC_MODE_HEAT else "off"
-        await self.coordinator.async_set_mode(mode)
-        await self.coordinator.async_request_refresh()
+        return shared
 
     async def async_update(self):
         await self.coordinator.async_request_refresh()

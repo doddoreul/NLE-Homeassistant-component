@@ -79,7 +79,9 @@ class NLEFieldSensor(Entity):
 
     @property
     def unique_id(self):
-        return f"nle_{self.device_id}_{self._field}"
+        # Tronque device_id à 8 caractères pour un unique_id court
+        short_id = self.device_id[:8]
+        return f"nle_{short_id}_{self._field}"
 
     @property
     def available(self):

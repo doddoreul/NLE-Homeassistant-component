@@ -2,7 +2,7 @@ import logging
 import aiohttp
 from datetime import timedelta
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, CONF_API_URL, CONF_API_KEY, CONF_DEVICE_ID
@@ -27,15 +27,15 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     coordinator = NLECoordinator(hass, api_url, api_key)
     await coordinator.async_refresh()
 
-    # On crée 4 entités séparées
-    sensors = [
-        NLEFieldSensor(coordinator, device_id, "nle_target_temp", "target_temperature"),
-        NLEFieldSensor(coordinator, device_id, "nle_current_temp", "current_temperature"),
-        NLEFieldSensor(coordinator, device_id, "nle_mode", "target_temperature_type"),
-        NLEFieldSensor(coordinator, device_id, "nle_heating", "hvac_heater_state"),
+    # Crée les 4 entités distinctes
+    entities = [
+        NLEFieldSensor(coordinator, device_id, "NLE Current Temperature", "current_temperature"),
+        NLEFieldSensor(coordinator, device_id, "NLE Target Temperature", "target_temperature"),
+        NLEFieldSensor(coordinator, device_id, "NLE Mode", "target_temperature_type"),
+        NLEFieldSensor(coordinator, device_id, "NLE Heating", "hvac_heater_state"),
     ]
 
-    async_add_entities(sensors)
+    async_add_entities(entities)
 
 
 class NLECoordinator(DataUpdateCoordinator):
@@ -45,7 +45,7 @@ class NLECoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name="nle_thermostat_coordinator",
+            name="nle",
             update_interval=SCAN_INTERVAL,
         )
         self.api_url = api_url
@@ -60,37 +60,52 @@ class NLECoordinator(DataUpdateCoordinator):
                     if resp.status != 200:
                         raise UpdateFailed(f"API HTTP {resp.status}")
                     return await resp.json()
-
         except Exception as err:
             raise UpdateFailed(f"Erreur API NLE : {err}") from err
 
 
-class NLEFieldSensor(SensorEntity):
-    """Un champ individuel du thermostat devient une entité."""
+class NLEFieldSensor(Entity):
+    """Une entité représentant un champ spécifique du thermostat."""
 
-    def __init__(self, coordinator, device_id, sensor_name, field_name):
+    def __init__(self, coordinator, device_id, name, field):
         self.coordinator = coordinator
         self.device_id = device_id
-        self._attr_name = sensor_name.replace("_", " ").title()
-        self._attr_unique_id = f"{DOMAIN}_{sensor_name}"
-        self.field_name = field_name
+        self._name = name
+        self._field = field
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def unique_id(self):
+        return f"nle_{self.device_id}_{self._field}"
 
     @property
     def available(self):
         return self.coordinator.last_update_success
 
     @property
-    def native_value(self):
-        """Retourne uniquement la valeur du champ souhaité."""
+    def state(self):
         data = self.coordinator.data or {}
-        state = data.get("state", {})
-        shared_key = next((k for k in state if k.startswith("shared.")), None)
-
+        # Récupère le premier shared.<serial> existant
+        state_dict = data.get("state", {})
+        shared_key = next((k for k in state_dict if k.startswith("shared.")), None)
         if not shared_key:
             return None
+        val = state_dict.get(shared_key, {}).get("value", {})
+        return val.get(self._field)
 
-        val = state.get(shared_key, {}).get("value", {})
-        return val.get(self.field_name)
+    @property
+    def extra_state_attributes(self):
+        """Ajoute des informations complémentaires sur le device"""
+        data = self.coordinator.data or {}
+        device = data.get("device", {})
+        return {
+            "device_id": device.get("id"),
+            "serial": device.get("serial"),
+            "device_name": device.get("name"),
+        }
 
     async def async_update(self):
         await self.coordinator.async_request_refresh()
